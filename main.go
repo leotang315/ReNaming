@@ -316,7 +316,8 @@ func logVerbose(format string, args ...interface{}) {
 }
 
 func logError(format string, args ...interface{}) {
-	fmt.Printf("Error: "+format+"\n", args...)
+	// 将错误信息输出到标准错误流
+	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
 }
 
 // convertDateFormat 将用户友好的日期格式转换为 Go 的格式
@@ -375,8 +376,9 @@ func writeMappingsToFile() {
 }
 
 func writeMappingsToConsole() {
+	logVerbose("%s, %s", "old_path", "new_path")
 	for _, m := range config.Mappings {
-		logVerbose("Dry run: would rename %s to %s", m.OldPath, m.NewPath)
+		logVerbose("%s, %s", m.OldPath, m.NewPath)
 	}
 }
 
@@ -451,5 +453,8 @@ func getMappingFromProcess() {
 		return nil
 	})
 
-	logError("Error Walk : %v", err)
+	if err != nil {
+		logError("Error Walk : %v", err)
+	}
+
 }

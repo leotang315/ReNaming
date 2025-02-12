@@ -14,7 +14,7 @@
   - `{index:<起始值>:<补零位数>}` 自动递增序号
   - `{regex:expr:group}` 正则表达式提取（group 0表示整个匹配字符串，1表示第一个匹配组）
   - `{split:sep:index}` 分隔符分割（index从0开始）
-  - `{slice:start:end}` 字符串切片 
+  - `{slice:start:end}` 字符串切片 （从0字符开始，包含start，不包含end）
   - `{replace:old:new}` 字符串替换
   - 大小写转换：`{lower}`, `{upper}`, `{title}`
 - 干运行模式（预览更改）
