@@ -17,9 +17,7 @@ import (
 type Config struct {
 	InputFolder  string        // 输入文件夹路径
 	Pattern      string        // 文件匹配模式（例如 *.txt）
-	Recursive    bool          // 是否递归处理子目录
 	NameTemplate string        // 新文件名模板
-	DryRun       bool          // 试运行模式（只显示不执行）
 	GenerateMap  string        // 生成映射文件路径（用于保存重命名计划）
 	ApplyMap     string        // 应用映射文件路径（用于执行预存的重命名计划）
 	DateFormat   string        // 日期格式（用于 {date} 占位符）
@@ -43,7 +41,6 @@ var placeholderHandlers = map[string]placeholderHandler{
 	"ext":      handleExt,
 	"lower":    handleLower,
 	"upper":    handleUpper,
-	"title":    handleTitle,
 	"date":     handleDate,
 	"time":     handleTime,
 	"datetime": handleDatetime,
@@ -52,12 +49,9 @@ var config Config
 
 // 主函数
 func main() {
-
-	flag.StringVar(&config.InputFolder, "f", "", "Input folder path (required)")
-	flag.StringVar(&config.NameTemplate, "n", "", "New name template (required)")
-	flag.StringVar(&config.Pattern, "p", "*", "File pattern (e.g., *.txt)")
-	flag.BoolVar(&config.Recursive, "r", false, "Recursively process subfolders")
-	flag.BoolVar(&config.DryRun, "d", false, "Dry run (show changes without renaming)")
+	flag.StringVar(&config.InputFolder, "i", "", "Input folder path (required)")
+	flag.StringVar(&config.NameTemplate, "o", "", "New name template (required)")
+	flag.StringVar(&config.Pattern, "f", "*", "File pattern (e.g., *.txt)")
 	flag.StringVar(&config.GenerateMap, "g", "", "Generate mapping file (dry run)")
 	flag.StringVar(&config.ApplyMap, "a", "", "Apply mapping from file")
 	flag.StringVar(&config.DateFormat, "df", "YYYY-MM-DD", "Date format for {date} placeholder")
@@ -81,13 +75,8 @@ func main() {
 	config.Index = 0
 	config.Mappings = make([]FileMapping, 0)
 
-	// 构建映射
-	if config.ApplyMap != "" {
-		getMappingFromFile()
-	} else {
-		getMappingFromProcess()
-
-	}
+	// 构建映射关系
+	buildMappings()
 
 	// 应用映射
 	rename()
@@ -305,11 +294,6 @@ func handleUpper(placeholder string, data map[string]string) string {
 	return strings.ToUpper(data["fileName"])
 }
 
-// 处理标题格式占位符 {title}
-func handleTitle(placeholder string, data map[string]string) string {
-	return strings.Title(data["fileName"])
-}
-
 // Logging functions
 func logVerbose(format string, args ...interface{}) {
 	fmt.Printf(format+"\n", args...)
@@ -334,23 +318,26 @@ func convertDateFormat(userFormat string) string {
 	return userFormat
 }
 
+// buildMappings 构建文件重命名映射关系
+// 根据不同模式选择从文件加载或处理目录
+func buildMappings() {
+	if config.ApplyMap != "" {
+		getMappingFromFile()
+	} else {
+		getMappingFromProcess()
+	}
+}
+
 // rename 执行重命名操作，根据不同模式：
 // - 生成映射文件模式：将映射关系写入CSV
 // - 试运行模式：在控制台显示变更计划
 // - 正常模式：实际执行文件重命名
 func rename() {
-
 	if config.GenerateMap != "" {
 		writeMappingsToFile()
-		return
+	} else {
+		writeMappingsToReal()
 	}
-
-	if config.DryRun {
-		writeMappingsToConsole()
-		return
-	}
-
-	writeMappingsToReal()
 }
 
 // 写入映射关系（处理完成后统一调用）
@@ -375,24 +362,62 @@ func writeMappingsToFile() {
 	}
 }
 
-func writeMappingsToConsole() {
-	logVerbose("%s, %s", "old_path", "new_path")
-	for _, m := range config.Mappings {
-		logVerbose("%s, %s", m.OldPath, m.NewPath)
-	}
-}
-
 func writeMappingsToReal() {
+	const maxRetries = 5
+	const retryDelay = 1 * time.Second
+
 	for _, m := range config.Mappings {
+		// 检查源文件是否存在
+		if _, err := os.Stat(m.OldPath); os.IsNotExist(err) {
+			logError("源文件不存在: %s", m.OldPath)
+			continue
+		}
+
 		// 处理文件名冲突
 		if _, err := os.Stat(m.NewPath); err == nil {
-			logVerbose("Skipping conflicting file: %s", m.NewPath)
-			return
+			logError("目标文件已存在，跳过: %s", m.NewPath)
+			continue
 		}
-		logVerbose("Renaming %s to %s", m.OldPath, m.NewPath)
-		if err := os.Rename(m.OldPath, m.NewPath); err != nil {
-			logError("Error renaming file: %v", err)
+
+		// 重试机制
+		success := false
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			logVerbose("正在重命名 %s 到 %s (尝试 %d/%d)", m.OldPath, m.NewPath, attempt, maxRetries)
+
+			if err := os.Rename(m.OldPath, m.NewPath); err != nil {
+				if attempt == maxRetries {
+					logError("重命名失败（已达最大重试次数）: %v", err)
+					break
+				}
+
+				// 根据错误类型处理
+				switch {
+				case os.IsPermission(err):
+					logError("权限不足: %v", err)
+					break // 权限错误直接退出重试
+				case os.IsNotExist(err):
+					logError("文件不存在: %v", err)
+					break // 文件不存在直接退出重试
+				default:
+					logError("重试中... 错误: %v", err)
+					time.Sleep(retryDelay)
+					continue
+				}
+			}
+
+			success = true
+			break
 		}
+
+		if success {
+			logVerbose("重命名成功: %s -> %s", m.OldPath, m.NewPath)
+		}
+
+		// // 执行重命名
+		// logVerbose("Renaming %s to %s", m.OldPath, m.NewPath)
+		// if err := os.Rename(m.OldPath, m.NewPath); err != nil {
+		// 	logError("Error renaming file: %v", err)
+		// }
 	}
 }
 
@@ -436,25 +461,24 @@ func getMappingFromFile() {
 }
 
 func getMappingFromProcess() {
-	// 遍历输入文件夹
-	err := filepath.Walk(config.InputFolder, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			// 检查文件模式匹配
-			if matched, _ := filepath.Match(config.Pattern, filepath.Base(path)); matched {
-				processFile(path)
-			}
-		} else if !config.Recursive && path != config.InputFolder {
-			// 如果不递归，跳过子文件夹
-			return filepath.SkipDir
-		}
-		return nil
-	})
-
+	// 读取目录下的文件
+	files, err := os.ReadDir(config.InputFolder)
 	if err != nil {
-		logError("Error Walk : %v", err)
+		logError("读取目录错误: %v", err)
+		return
 	}
 
+	// 只处理当前目录下的文件
+	for _, file := range files {
+		// 跳过目录
+		if file.IsDir() {
+			continue
+		}
+
+		// 检查文件模式匹配
+		if matched, _ := filepath.Match(config.Pattern, file.Name()); matched {
+			filePath := filepath.Join(config.InputFolder, file.Name())
+			processFile(filePath)
+		}
+	}
 }
