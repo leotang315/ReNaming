@@ -1,6 +1,7 @@
-package Renamer
+package ReNamer
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -14,11 +15,17 @@ type Rule struct {
 	Replace string `json:"Replace"` // 替换模板
 }
 
-// Apply 应用规则到文件名
-func (r Rule) Apply(filename string) string {
+// Apply 应用规则到文件名，返回新文件名和错误
+func (r Rule) Apply(filename string) (string, error) {
 	template := r.processPlaceholders(r.Replace)
-	re := regexp.MustCompile(r.Pattern)
-	return re.ReplaceAllString(filename, template)
+
+	// 安全地编译正则表达式
+	re, err := regexp.Compile(r.Pattern)
+	if err != nil {
+		return filename, fmt.Errorf("无效的正则表达式 '%s': %v", r.Pattern, err)
+	}
+
+	return re.ReplaceAllString(filename, template), nil
 }
 
 // processPlaceholders 处理替换模板中的占位符

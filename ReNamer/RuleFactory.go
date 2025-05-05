@@ -1,4 +1,4 @@
-package Renamer
+package ReNamer
 
 import (
 	"fmt"
