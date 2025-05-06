@@ -14,25 +14,56 @@ import (
 
 func main() {
 
-	// --- 1. 定义命令行参数 ---
+	// --- 1. Define command line parameters ---
 	path := flag.String("path", "", "Comma-separated list of files and/or directories to process.")
 	pattern := flag.String("pattern", "*", "Glob pattern to filter files in directories.")
 	recursive := flag.Bool("recursive", false, "Process subdirectories recursively.")
 	ruleFile := flag.String("ruleFile", "", "Path to the JSON config file containing renaming rules.")
 	ruleJSON := flag.String("rule", "", "Renaming rules as a JSON array string. For single rule, wrap it in square brackets.")
 	dryRun := flag.Bool("dry-run", false, "Preview changes without actually renaming files.")
+	mappingFile := flag.String("mapping", "", "Path to the JSON file containing renaming mappings.")
+	outputFile := flag.String("output", "", "Path to save the results as JSON file.")
 
 	flag.Parse()
 
-	if *path == "" {
-		log.Fatal("No path specified. Use -path to specify files and/or directories.")
+	// --- 2. Create Renamer ---
+	renamer := ReNamer.NewReNamer()
+	renamer.SetDryRun(*dryRun)
+
+	// If mapping file is provided, use it directly for renaming
+	if *mappingFile != "" {
+		// Read mapping file
+		data, err := os.ReadFile(*mappingFile)
+		if err != nil {
+			log.Fatalf("Error reading mapping file %s: %v", *mappingFile, err)
+		}
+
+		// Parse mapping data
+		var mappings []ReNamer.ReNameResult
+		if err := json.Unmarshal(data, &mappings); err != nil {
+			log.Fatalf("Error parsing mapping file %s: %v", *mappingFile, err)
+		}
+
+		// Apply mappings
+		results := renamer.ApplyMapping(mappings, ReNamer.ModeError)
+
+		// Print results
+		resultsJSON, err := json.MarshalIndent(results, "", "    ")
+		if err != nil {
+			log.Printf("Error marshaling results: %v\n", err)
+		} else {
+			fmt.Printf("\n--- Results JSON ---\n%s\n", resultsJSON)
+		}
+		return
 	}
 
-	// --- 2. 创建和配置 Renamer ---
-	renamer := ReNamer.NewRenamer()
+	// If no mapping file is provided, continue with the original processing flow
+	if *path == "" {
+		log.Fatal("No path specified. Use -path to specify files and/or directories, or use -mapping to provide a mapping file.")
+	}
 
 	if *ruleFile != "" {
-		// 从文件加载配置
+		// Load config from file
 		data, err := os.ReadFile(*ruleFile)
 		if err != nil {
 			log.Fatalf("Error reading config file %s: %v", *ruleFile, err)
@@ -43,7 +74,7 @@ func main() {
 		}
 		fmt.Printf("Loaded %d rules from config file: %s\n", len(renamer.Rules), *ruleFile)
 	} else if *ruleJSON != "" {
-		// 从命令行加载规则（单个或多个）
+		// Load rules from command line (single or multiple)
 		var rules []ReNamer.Rule
 		if err := json.Unmarshal([]byte(*ruleJSON), &rules); err != nil {
 			log.Fatalf("Error parsing -rule JSON: %v", err)
@@ -58,10 +89,10 @@ func main() {
 		log.Fatal("No renaming rules provided. Use -config or -rule.")
 	}
 
-	// --- 3. 获取文件列表 ---
+	// --- 3. Get file list ---
 	var filesToProcess []string
 
-	// 处理每个路径（可以是文件或目录）
+	// Process each path (can be file or directory)
 	paths := strings.Split(*path, ",")
 	for _, p := range paths {
 		p = strings.TrimSpace(p)
@@ -75,18 +106,18 @@ func main() {
 			continue
 		}
 
-		// 修改目录处理部分
+		// Modify directory processing part
 		if fileInfo.IsDir() {
-			// 处理目录
+			// Process directory
 			fmt.Printf("Processing directory: %s (pattern: %s)\n", p, *pattern)
-			// 使用 filepath.WalkDir 替代 os.ReadDir
+			// Use filepath.WalkDir instead of os.ReadDir
 			err = filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
 				if err != nil {
 					log.Printf("Warning: Error accessing %s: %v\n", path, err)
-					return nil // 继续处理其他文件
+					return nil // Continue processing other files
 				}
 
-				// 如果是目录且不是递归模式，跳过子目录
+				// If directory and not recursive mode, skip subdirectory
 				if d.IsDir() {
 					if !*recursive && path != p {
 						return filepath.SkipDir
@@ -94,7 +125,7 @@ func main() {
 					return nil
 				}
 
-				// 处理文件
+				// Process file
 				match, _ := filepath.Match(*pattern, d.Name())
 				if match {
 					filesToProcess = append(filesToProcess, path)
@@ -106,7 +137,7 @@ func main() {
 				log.Printf("Warning: Error walking directory %s: %v\n", p, err)
 			}
 		} else {
-			// 处理单个文件
+			// Process single file
 			filesToProcess = append(filesToProcess, p)
 			fmt.Printf("Processing file: %s\n", p)
 		}
@@ -117,17 +148,26 @@ func main() {
 		return
 	}
 
-	// --- 4. 应用重命名规则 ---
+	// --- 4. Apply rename rules ---
 	renamer.AddFiles(filesToProcess)
 	renamer.SetDryRun(*dryRun)
 	results := renamer.ApplyBatch()
 
-	// 打印 results 的 JSON 格式
+	// Print results in JSON format
 	resultsJSON, err := json.MarshalIndent(results, "", "    ")
 	if err != nil {
 		log.Printf("Error marshaling results: %v\n", err)
 	} else {
 		fmt.Printf("\n--- Results JSON ---\n%s\n", resultsJSON)
-	}
 
+		// 如果指定了输出文件，则将结果保存到文件
+		if *outputFile != "" {
+			err := os.WriteFile(*outputFile, resultsJSON, 0644)
+			if err != nil {
+				log.Printf("Error writing results to file %s: %v\n", *outputFile, err)
+			} else {
+				fmt.Printf("Results have been saved to: %s\n", *outputFile)
+			}
+		}
+	}
 }

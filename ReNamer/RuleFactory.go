@@ -17,16 +17,16 @@ func (rf *RuleFactory) AddPrefix(prefix string) Rule {
 	return Rule{
 		Name:    "AddPrefix",
 		Pattern: `^`,
-		Replace: prefix + "_",
+		Replace: prefix,
 	}
 }
 
-// AddSuffix 添加后缀（在扩展名之前）
+// AddSuffix 添加后缀
 func (rf *RuleFactory) AddSuffix(suffix string) Rule {
 	return Rule{
 		Name:    "AddSuffix",
-		Pattern: `(\.[^.]+)$`,
-		Replace: "_" + suffix + "$1",
+		Pattern: `$`,
+		Replace: suffix,
 	}
 }
 
@@ -35,7 +35,7 @@ func (rf *RuleFactory) AddAfterPattern(pattern, content string) Rule {
 	return Rule{
 		Name:    "AddAfterPattern",
 		Pattern: `(` + pattern + `)`,
-		Replace: "${1}_" + content,
+		Replace: "${1}" + content,
 	}
 }
 
@@ -44,7 +44,7 @@ func (rf *RuleFactory) AddBeforePattern(pattern, content string) Rule {
 	return Rule{
 		Name:    "AddBeforePattern",
 		Pattern: `(` + pattern + `)`,
-		Replace: content + "_${1}",
+		Replace: content + "${1}",
 	}
 }
 
@@ -53,7 +53,7 @@ func (rf *RuleFactory) AddAtPosition(pos int, content string) Rule {
 	return Rule{
 		Name:    "AddAtPosition",
 		Pattern: fmt.Sprintf(`^(.{%d})(.*)$`, pos),
-		Replace: "${1}_" + content + "_${2}",
+		Replace: "${1}" + content + "${2}",
 	}
 }
 
@@ -62,7 +62,7 @@ func (rf *RuleFactory) AddBeforeLastN(n int, content string) Rule {
 	return Rule{
 		Name:    "AddBeforeLastN",
 		Pattern: fmt.Sprintf(`^(.*?)(.{%d})$`, n),
-		Replace: "${1}_" + content + "_${2}",
+		Replace: "${1}" + content + "${2}",
 	}
 }
 
@@ -207,14 +207,5 @@ func (rf *RuleFactory) ReplaceBetweenDelimiters(startDelim, endDelim, replacemen
 		Name:    "ReplaceBetweenDelimiters",
 		Pattern: startDelim + `[^` + endDelim + `]*` + endDelim,
 		Replace: startDelim + replacement + endDelim,
-	}
-}
-
-// RenameWithPattern 使用模式和格式重命名
-func (rf *RuleFactory) RenameWithPattern(pattern, format string) Rule {
-	return Rule{
-		Name:    "RenameWithPattern",
-		Pattern: pattern,
-		Replace: format,
 	}
 }
