@@ -1,4 +1,4 @@
-package ReNamer
+package renamer
 
 import (
 	"encoding/json"

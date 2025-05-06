@@ -1,7 +1,7 @@
 package main
 
 import (
-	"ReNaming/ReNamer"
+	"ReNaming/internal/renamer"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -27,8 +27,8 @@ func main() {
 	flag.Parse()
 
 	// --- 2. Create Renamer ---
-	renamer := ReNamer.NewReNamer()
-	renamer.SetDryRun(*dryRun)
+	reNamer := renamer.NewReNamer()
+	reNamer.SetDryRun(*dryRun)
 
 	// If mapping file is provided, use it directly for renaming
 	if *mappingFile != "" {
@@ -39,13 +39,13 @@ func main() {
 		}
 
 		// Parse mapping data
-		var mappings []ReNamer.ReNameResult
+		var mappings []renamer.ReNameResult
 		if err := json.Unmarshal(data, &mappings); err != nil {
 			log.Fatalf("Error parsing mapping file %s: %v", *mappingFile, err)
 		}
 
 		// Apply mappings
-		results := renamer.ApplyMapping(mappings, ReNamer.ModeError)
+		results := reNamer.ApplyMapping(mappings, renamer.ModeError)
 
 		// Print results
 		resultsJSON, err := json.MarshalIndent(results, "", "    ")
@@ -68,24 +68,24 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error reading config file %s: %v", *ruleFile, err)
 		}
-		err = renamer.LoadRule(data)
+		err = reNamer.LoadRule(data)
 		if err != nil {
 			log.Fatalf("Error parsing config file %s: %v", *ruleFile, err)
 		}
-		fmt.Printf("Loaded %d rules from config file: %s\n", len(renamer.Rules), *ruleFile)
+		fmt.Printf("Loaded %d rules from config file: %s\n", len(reNamer.Rules), *ruleFile)
 	} else if *ruleJSON != "" {
 		// Load rules from command line (single or multiple)
-		var rules []ReNamer.Rule
+		var rules []renamer.Rule
 		if err := json.Unmarshal([]byte(*ruleJSON), &rules); err != nil {
 			log.Fatalf("Error parsing -rule JSON: %v", err)
 		}
 		for _, rule := range rules {
-			renamer.AddRule(rule)
+			reNamer.AddRule(rule)
 		}
 		fmt.Printf("Loaded %d rules from command line\n", len(rules))
 	}
 
-	if len(renamer.Rules) == 0 {
+	if len(reNamer.Rules) == 0 {
 		log.Fatal("No renaming rules provided. Use -config or -rule.")
 	}
 
@@ -149,9 +149,9 @@ func main() {
 	}
 
 	// --- 4. Apply rename rules ---
-	renamer.AddFiles(filesToProcess)
-	renamer.SetDryRun(*dryRun)
-	results := renamer.ApplyBatch()
+	reNamer.AddFiles(filesToProcess)
+	reNamer.SetDryRun(*dryRun)
+	results := reNamer.ApplyBatch()
 
 	// Print results in JSON format
 	resultsJSON, err := json.MarshalIndent(results, "", "    ")

@@ -1,4 +1,4 @@
-package ReNamer
+package renamer
 
 type ReNameMode int
 
